@@ -1,0 +1,158 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Canvas Recorder (Camera + Video)</title>
+<style>
+  body {
+    font-family: sans-serif;
+    text-align: center;
+  }
+  video, canvas {
+    width: 100%;
+    max-width: 400px;
+    border: 1px solid #ccc;
+    margin: 5px;
+    border-radius: 8px;
+  }
+  #result {
+    display: none;
+    margin-top: 10px;
+  }
+  button {
+    margin: 5px;
+    padding: 10px 15px;
+    border: none;
+    border-radius: 6px;
+    background-color: #007bff;
+    color: white;
+    cursor: pointer;
+  }
+  button:disabled {
+    background-color: #999;
+    cursor: not-allowed;
+  }
+</style>
+</head>
+<body>
+  <h3>🎥 Canvas + Camera + Video Recorder</h3>
+
+  <!-- camera + video -->
+  <video id="videoCam" autoplay playsinline muted style="display: none;"></video>
+  <video 
+    id="videoPlay" 
+    autoplay playsinline muted loop 
+    src="./video.mp4" 
+    crossorigin="anonymous"
+    style="display: none;"
+  ></video>
+
+  <!-- canvas hiển thị -->
+  <canvas id="canvas"></canvas>
+
+  <br/>
+  <button id="startBtn">Start Recording</button>
+  <button id="stopBtn" disabled>Stop Recording</button>
+  <button id="downloadBtn" disabled>Download</button>
+
+  <!-- kết quả -->
+  <div id="result">
+    <h4>Recorded Result:</h4>
+    <video id="playback" controls></video>
+  </div>
+
+<script>
+let camStream, rec, chunks = [], animFrame;
+const camVideo = document.getElementById("videoCam");
+const playVideo = document.getElementById("videoPlay");
+const canvas = document.getElementById("canvas");
+const ctx = canvas.getContext("2d");
+
+const startBtn = document.getElementById("startBtn");
+const stopBtn = document.getElementById("stopBtn");
+const downloadBtn = document.getElementById("downloadBtn");
+const playback = document.getElementById("playback");
+const resultDiv = document.getElementById("result");
+
+async function initCamera() {
+  camStream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false });
+  camVideo.srcObject = camStream;
+  await camVideo.play();
+}
+
+function drawCanvas() {
+  canvas.width = 640;
+  canvas.height = 480;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+  // video trình chiếu bên trái
+  ctx.drawImage(playVideo, 0, 0, canvas.width / 2, canvas.height);
+
+  // camera bên phải
+  ctx.drawImage(camVideo, canvas.width / 2, 0, canvas.width / 2, canvas.height);
+
+  animFrame = requestAnimationFrame(drawCanvas);
+}
+
+function getSupportedMimeType() {
+  const types = [
+    'video/webm;codecs=vp9',
+    'video/webm;codecs=vp8',
+    'video/webm',
+    'video/mp4;codecs=h264'
+  ];
+  return types.find(t => MediaRecorder.isTypeSupported(t)) || 'video/webm';
+}
+
+startBtn.onclick = async () => {
+  await initCamera();
+  playVideo.play();
+  drawCanvas();
+
+  const stream = canvas.captureStream(30);
+  const mimeType = getSupportedMimeType();
+  console.log('Using codec:', mimeType);
+
+  rec = new MediaRecorder(stream, { mimeType });
+  chunks = [];
+
+  rec.ondataavailable = e => {
+    if (e.data.size > 0) chunks.push(e.data);
+  };
+
+  rec.onstop = e => {
+    const blob = new Blob(chunks, { type: mimeType });
+    const url = URL.createObjectURL(blob);
+
+    // Hiển thị preview
+    playback.src = url;
+    playback.load();
+    resultDiv.style.display = "block";
+
+    // Kích hoạt nút download
+    downloadBtn.onclick = () => {
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = "recorded." + (mimeType.includes("mp4") ? "mp4" : "webm");
+      a.click();
+    };
+    downloadBtn.disabled = false;
+  };
+
+  rec.start();
+  startBtn.disabled = true;
+  stopBtn.disabled = false;
+  downloadBtn.disabled = true;
+  resultDiv.style.display = "none";
+};
+
+stopBtn.onclick = () => {
+  if (rec && rec.state !== "inactive") rec.stop();
+  cancelAnimationFrame(animFrame);
+  camStream.getTracks().forEach(t => t.stop());
+  startBtn.disabled = false;
+  stopBtn.disabled = true;
+};
+</script>
+</body>
+</html>
